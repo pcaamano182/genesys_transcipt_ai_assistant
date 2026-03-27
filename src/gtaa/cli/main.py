@@ -87,41 +87,37 @@ def auth_status():
 
 
 @auth.command("gcp-login")
+@click.option("--key-file", "key_file", required=True,
+              envvar="GOOGLE_APPLICATION_CREDENTIALS",
+              type=click.Path(exists=True, dir_okay=False),
+              help="Path to the service account JSON key file.")
 @click.option("--project", "project_id", required=True, envvar="GOOGLE_CLOUD_PROJECT",
-              help="GCP project ID to use as quota project.")
-@click.option("--config", "config_path", default=None, help="Path to custom config YAML.")
-def auth_gcp_login(project_id: str, config_path: Optional[str]):
+              help="GCP project ID (used as quota/billing project).")
+def auth_gcp_login(key_file: str, project_id: str):
     """
-    Authenticate with Google Cloud using your user account (SSO-compatible).
+    Configure Google Cloud authentication with a service account key file.
 
     \b
-    Two paths (auto-detected):
-      1. gcloud CLI installed  -> runs `gcloud auth application-default login`
-      2. gcloud not installed  -> OAuth2 browser flow (requires GCP_OAUTH_CLIENT_ID
-                                  and GCP_OAUTH_CLIENT_SECRET in .env)
+    Required IAM role on the service account:
+      roles/aiplatform.user  (Vertex AI User)
 
-    Your identity will appear in Cloud Audit Logs for every Vertex AI call.
+    \b
+    Example:
+      gtaa auth gcp-login --key-file ~/keys/my-sa.json --project my-gcp-project
     """
-    from gtaa.config.settings import get_settings, reset_settings
     from gtaa.auth.gcp import GCPAuthManager, GCPAuthError
 
-    reset_settings()
-    settings = get_settings(config_path)
-
-    mgr = GCPAuthManager(
-        oauth_client_id=settings.google.oauth_client_id,
-        oauth_client_secret=settings.google.oauth_client_secret,
-    )
+    mgr = GCPAuthManager()
     try:
-        creds = mgr.login(project_id)
+        mgr.setup(key_file=key_file, project_id=project_id)
         status = mgr.get_status()
-        console.print(f"[green]OK GCP authentication successful.[/green]")
-        console.print(f"  User:    [cyan]{status.get('email', 'unknown')}[/cyan]")
+        console.print(f"[green]OK GCP authentication configured.[/green]")
+        console.print(f"  Account: [cyan]{status.get('email', 'unknown')}[/cyan]")
         console.print(f"  Project: [cyan]{project_id}[/cyan]")
-        console.print(f"  Method:  [dim]{status.get('method', 'unknown')}[/dim]")
+        console.print(f"  Key file: [dim]{status.get('key_file', key_file)}[/dim]")
         console.print(f"  Cached:  [dim]{Path.home() / '.gtaa' / 'gcp_credentials.json'}[/dim]")
     except GCPAuthError as e:
-        err_console.print(f"[red]GCP login failed:[/red] {e}")
+        err_console.print(f"[red]GCP setup failed:[/red] {e}")
         sys.exit(1)
 
 
@@ -132,14 +128,15 @@ def auth_gcp_status():
 
     status = GCPAuthManager().get_status()
     if status["authenticated"]:
-        console.print(f"[green]OK GCP: Authenticated[/green]")
-        console.print(f"  User:    [cyan]{status['email']}[/cyan]")
-        console.print(f"  Project: [cyan]{status['quota_project_id']}[/cyan]")
+        console.print(f"[green]OK GCP: Configured[/green]")
+        console.print(f"  Account: [cyan]{status['email']}[/cyan]")
+        if status.get("quota_project_id"):
+            console.print(f"  Project: [cyan]{status['quota_project_id']}[/cyan]")
         console.print(f"  Method:  [dim]{status['method']}[/dim]")
+        console.print(f"  Key file: [dim]{status.get('key_file', 'n/a')}[/dim]")
     else:
-        console.print(f"[yellow]XX GCP: Not authenticated[/yellow]")
+        console.print(f"[yellow]XX GCP: Not configured[/yellow]")
         console.print(f"  {status['message']}")
-        console.print(f"  Run: [cyan]gtaa auth gcp-login --project YOUR_PROJECT_ID[/cyan]")
 
 
 @auth.command("gcp-logout")
@@ -148,7 +145,7 @@ def auth_gcp_logout():
     from gtaa.auth.gcp import GCPAuthManager, CACHE_PATH
 
     GCPAuthManager().logout()
-    console.print(f"[green]OK GCP credentials removed.[/green]")
+    console.print(f"[green]OK GCP credentials cache removed.[/green]")
     console.print(f"  Deleted: [dim]{CACHE_PATH}[/dim]")
 
 
@@ -273,10 +270,7 @@ def analyze(
         )
         sys.exit(1)
 
-    gcp_auth = GCPAuthManager(
-        oauth_client_id=settings.google.oauth_client_id,
-        oauth_client_secret=settings.google.oauth_client_secret,
-    )
+    gcp_auth = GCPAuthManager()
     try:
         gcp_credentials = gcp_auth.get_credentials()
         gcp_status = gcp_auth.get_status()
@@ -287,7 +281,7 @@ def analyze(
     except GCPAuthError as e:
         err_console.print(
             f"[red]GCP authentication required.[/red]\n"
-            f"Run: [cyan]gtaa auth gcp-login --project {settings.google.project_id}[/cyan]\n"
+            f"Run: [cyan]gtaa auth gcp-login --key-file path/to/sa.json --project {settings.google.project_id}[/cyan]\n"
             f"Details: {e}"
         )
         sys.exit(1)
@@ -469,10 +463,7 @@ def demo(
         )
         sys.exit(1)
 
-    gcp_auth = GCPAuthManager(
-        oauth_client_id=settings.google.oauth_client_id,
-        oauth_client_secret=settings.google.oauth_client_secret,
-    )
+    gcp_auth = GCPAuthManager()
     try:
         gcp_credentials = gcp_auth.get_credentials()
         gcp_status = gcp_auth.get_status()
@@ -483,7 +474,7 @@ def demo(
     except GCPAuthError as e:
         err_console.print(
             f"[red]GCP authentication required.[/red]\n"
-            f"Run: [cyan]gtaa auth gcp-login --project {settings.google.project_id}[/cyan]\n"
+            f"Run: [cyan]gtaa auth gcp-login --key-file path/to/sa.json --project {settings.google.project_id}[/cyan]\n"
             f"Details: {e}"
         )
         sys.exit(1)

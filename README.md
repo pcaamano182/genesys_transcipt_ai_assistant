@@ -60,7 +60,7 @@ Reporte de resultados
 src/gtaa/
 ├── auth/
 │   ├── genesys.py      OAuth2 Authorization Code para Genesys Cloud
-│   ├── gcp.py          Credenciales de usuario GCP (gcloud o OAuth2 directo)
+│   ├── gcp.py          Credenciales de service account GCP (JSON key file)
 │   └── google.py       Inicialización de Vertex AI SDK
 │
 ├── genesys/
@@ -88,19 +88,17 @@ src/gtaa/
     └── main.py         Interfaz Click (analyze, auth, demo)
 ```
 
-### Autenticación GCP — dos caminos
+### Autenticación GCP — service account
 
-La aplicación detecta automáticamente si `gcloud` CLI está instalado y elige el mejor camino:
+La aplicación usa un **service account** de GCP con una JSON key file. Es el método más directo y no requiere browser ni gcloud CLI.
 
 ```
-¿gcloud CLI instalado?
-    ├── SÍ  → gcloud auth application-default login
-    │         (recomendado, más simple)
-    └── NO  → OAuth2 Authorization Code directo
-              (requiere GCP_OAUTH_CLIENT_ID y GCP_OAUTH_CLIENT_SECRET)
+gtaa auth gcp-login --key-file path/to/sa.json --project mi-proyecto-gcp
+    -> Valida el key file y guarda la ruta en ~/.gtaa/gcp_credentials.json
+    -> Vertex AI se autenticará como el service account en cada llamada
 ```
 
-En ambos casos el token queda vinculado al usuario que inició sesión, por lo que cada llamada a Vertex AI queda registrada en los **Cloud Audit Logs** con el email del usuario (`principalEmail`).
+Rol IAM requerido en el service account: **`roles/aiplatform.user`** (Vertex AI User).
 
 ---
 
@@ -110,15 +108,9 @@ En ambos casos el token queda vinculado al usuario que inició sesión, por lo q
 |---|---|---|
 | Python | 3.11 | Verificar con `python --version` |
 | Git | cualquiera | Para clonar el repositorio |
-| gcloud CLI | cualquiera | Opcional pero recomendado |
 | Cuenta Genesys Cloud | — | Con permisos de Analytics y Speech & Text Analytics |
-| Proyecto GCP | — | Con Vertex AI API habilitada y rol `Vertex AI User` en tu cuenta |
-
-### Instalar gcloud CLI (recomendado)
-
-1. Descargar el instalador desde [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
-2. Ejecutar el instalador y seguir los pasos
-3. Verificar con `gcloud --version`
+| Proyecto GCP | — | Con Vertex AI API habilitada |
+| Service Account GCP | — | Con rol `roles/aiplatform.user` y su JSON key file descargado |
 
 ---
 
@@ -175,7 +167,6 @@ Contenido del `.env`:
 ```bash
 # ── Genesys Cloud ──────────────────────────────────────────────
 # Client ID y Secret de la aplicación OAuth2 registrada en Genesys Cloud.
-# Tipo de aplicación: "Code Authorization"
 GENESYS_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 GENESYS_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
@@ -188,11 +179,9 @@ GENESYS_REGION=us_west_2
 # ID del proyecto GCP donde está habilitada la Vertex AI API
 GOOGLE_CLOUD_PROJECT=mi-proyecto-gcp
 
-# ── Solo si gcloud CLI NO está instalado ───────────────────────
-# Crear en GCP Console → APIs & Services → Credentials
-# → Create OAuth Client ID → Desktop app
-GCP_OAUTH_CLIENT_ID=
-GCP_OAUTH_CLIENT_SECRET=
+# Path al JSON key file del service account (con rol roles/aiplatform.user)
+# Alternativa al comando `gtaa auth gcp-login --key-file ...`
+GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account-key.json
 ```
 
 ### Archivo `config/default.yaml`
@@ -239,28 +228,43 @@ Verificar estado:
 python -m gtaa.cli.main auth status
 ```
 
-### Google Cloud
+### Google Cloud (service account)
+
+**Paso 1: Crear el service account en GCP Console**
+
+1. Ir a **IAM & Admin → Service Accounts → Create Service Account**
+2. Nombre: por ejemplo `gtaa-vertex-user`
+3. Asignar el rol: **Vertex AI User** (`roles/aiplatform.user`)
+4. En la pestaña **Keys → Add Key → Create new key → JSON**
+5. Guardar el archivo descargado (por ejemplo `gtaa-sa-key.json`)
+
+**Paso 2: Configurar la aplicación**
 
 ```bash
-python -m gtaa.cli.main auth gcp-login --project mi-proyecto-gcp
+python -m gtaa.cli.main auth gcp-login \
+  --key-file path/to/gtaa-sa-key.json \
+  --project mi-proyecto-gcp
 ```
 
-Abre el browser. Completar el login con tu cuenta corporativa (SSO — Okta, Azure AD, etc. si está federado). Las credenciales se guardan en `~/.gtaa/gcp_credentials.json`.
+La ruta al key file se guarda en `~/.gtaa/gcp_credentials.json`. No es necesario repetir este paso a menos que se cambie el key file.
 
-Verificar estado:
+Alternativamente, se puede usar la variable de entorno estándar de GCP en lugar del comando:
+
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=path/to/gtaa-sa-key.json
+```
+
+**Verificar estado:**
 
 ```bash
 python -m gtaa.cli.main auth gcp-status
 ```
 
-Cerrar sesión GCP:
+**Limpiar configuración:**
 
 ```bash
 python -m gtaa.cli.main auth gcp-logout
 ```
-
-> **¿Por qué credenciales de usuario y no service account?**
-> Usando credenciales personales, cada llamada a Vertex AI queda registrada en Cloud Audit Logs con tu email (`principalEmail`), lo que permite trazabilidad de uso y control de costos por usuario.
 
 ---
 
@@ -414,7 +418,7 @@ Se pueden combinar en el mismo comando:
 |---|---|
 | `auth login` | Autenticar con Genesys Cloud (abre browser) |
 | `auth status` | Ver estado de sesión Genesys |
-| `auth gcp-login --project ID` | Autenticar con Google Cloud (abre browser) |
+| `auth gcp-login --key-file F --project ID` | Configurar autenticación GCP con service account |
 | `auth gcp-status` | Ver estado de sesión GCP |
 | `auth gcp-logout` | Eliminar credenciales GCP en caché |
 

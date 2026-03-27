@@ -64,12 +64,6 @@ class GoogleSettings(BaseSettings):
     cloud_project: str = ""
     location: str = "us-central1"
     model: str = "gemini-1.5-pro"
-    application_credentials: str = ""
-
-    # OAuth2 Desktop App client — only needed when gcloud CLI is NOT installed.
-    # Register a "Desktop app" OAuth2 client in GCP Console → APIs & Services → Credentials.
-    oauth_client_id: str = ""
-    oauth_client_secret: str = ""
 
     @property
     def project_id(self) -> str:
