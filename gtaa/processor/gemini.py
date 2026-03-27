@@ -19,9 +19,9 @@ Be concise, structured, and focus on actionable insights.
 If the transcript is empty or unintelligible, respond with: "No transcript available."
 """
 
-_MAX_CHARS_PER_CHUNK = 80_000  # ~20k tokens, safe for Gemini
+_MAX_CHARS_PER_CHUNK = 80_000
 
-# Models to try in order of preference if the configured model fails with 404
+# Models to try in order of preference
 _FALLBACK_MODELS = [
     "gemini-2.5-flash-preview-05-20",
     "gemini-2.0-flash-001",
@@ -66,55 +66,48 @@ def _build_prompt(user_prompt: str, transcript_text: str, conversation: Conversa
     )
 
 
-def _chunk_transcript(text: str, max_chars: int = _MAX_CHARS_PER_CHUNK) -> list[str]:
-    """Split a long transcript into overlapping chunks."""
-    if len(text) <= max_chars:
-        return [text]
-    chunks = []
-    overlap = max_chars // 10
-    start = 0
-    while start < len(text):
-        end = start + max_chars
-        chunks.append(text[start:end])
-        start = end - overlap
-    return chunks
-
-
-def _discover_model(configured_model: str) -> str:
+def _discover_model_rest(configured_model: str, project_id: str, location: str, credentials) -> str:
     """
-    Try the configured model first. If it returns 404, try fallback models.
-    Returns the first model name that responds successfully.
+    Check model availability via REST API (fast, no retries, no content generation).
+    Returns the first available model name.
     """
-    from vertexai.generative_models import GenerativeModel, GenerationConfig  # type: ignore
-    from google.api_core.exceptions import NotFound  # type: ignore
+    import httpx
+    from google.auth.transport.requests import Request  # type: ignore
 
+    # Get a fresh access token
+    if not credentials.token or credentials.expired:
+        credentials.refresh(Request())
+
+    headers = {"Authorization": f"Bearer {credentials.token}"}
     candidates = [configured_model] + [m for m in _FALLBACK_MODELS if m != configured_model]
 
     for model_name in candidates:
+        url = (
+            f"https://{location}-aiplatform.googleapis.com/v1/"
+            f"publishers/google/models/{model_name}"
+        )
         try:
-            model = GenerativeModel(model_name=model_name)
-            model.generate_content(
-                "Say OK",
-                generation_config=GenerationConfig(temperature=0, max_output_tokens=5),
-            )
-            return model_name
-        except NotFound:
-            continue
-        except Exception:
-            # Any other error (auth, quota, etc.) means the model exists but something else failed
-            # Return it anyway — the real error will surface during analysis
-            return model_name
+            r = httpx.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                return model_name
+            print(f"    {model_name}: HTTP {r.status_code} (skipping)")
+        except Exception as e:
+            print(f"    {model_name}: {type(e).__name__} (skipping)")
 
     raise RuntimeError(
-        f"No Gemini model available. Tried: {', '.join(candidates)}.\n"
-        "Verify that Vertex AI API is enabled in your GCP project and the "
-        "service account has the Vertex AI User role."
+        f"No Gemini model available in project '{project_id}' / location '{location}'.\n"
+        f"Tried: {', '.join(candidates)}\n"
+        "Check that:\n"
+        "  1. Vertex AI API is enabled in your GCP project\n"
+        "  2. The service account has the 'Vertex AI User' role\n"
+        "  3. The location/region is correct"
     )
 
 
 class GeminiProcessor:
-    def __init__(self, settings: GoogleSettings):
+    def __init__(self, settings: GoogleSettings, credentials=None):
         self.settings = settings
+        self._credentials = credentials
         self._model = None
         self._resolved_model_name: Optional[str] = None
 
@@ -122,13 +115,21 @@ class GeminiProcessor:
         if self._model is None:
             from vertexai.generative_models import GenerativeModel  # type: ignore
 
-            if self._resolved_model_name is None:
+            if self._resolved_model_name is None and self._credentials is not None:
                 print(f"  Checking model availability ({self.settings.model})...")
-                self._resolved_model_name = _discover_model(self.settings.model)
+                self._resolved_model_name = _discover_model_rest(
+                    configured_model=self.settings.model,
+                    project_id=self.settings.project_id,
+                    location=self.settings.location,
+                    credentials=self._credentials,
+                )
                 if self._resolved_model_name != self.settings.model:
-                    print(f"  Model '{self.settings.model}' not found, using: {self._resolved_model_name}")
+                    print(f"  Model '{self.settings.model}' not available, using: {self._resolved_model_name}")
                 else:
                     print(f"  Model OK: {self._resolved_model_name}")
+            elif self._resolved_model_name is None:
+                # No credentials for discovery, use configured model directly
+                self._resolved_model_name = self.settings.model
 
             self._model = GenerativeModel(
                 model_name=self._resolved_model_name,
@@ -179,7 +180,7 @@ class GeminiProcessor:
                 error="empty_transcript",
             )
 
-        # Truncate or chunk if too long
+        # Truncate if too long
         if len(transcript_text) > max_transcript_chars:
             transcript_text = transcript_text[:max_transcript_chars] + "\n[TRANSCRIPT TRUNCATED]"
 

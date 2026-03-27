@@ -287,7 +287,7 @@ def analyze(
         sys.exit(1)
 
     init_vertex_ai(settings.google.project_id, settings.google.location, credentials=gcp_credentials)
-    gemini = GeminiProcessor(settings.google)
+    gemini = GeminiProcessor(settings.google, credentials=gcp_credentials)
 
     # --- Process ---
     results = []
@@ -485,7 +485,7 @@ def demo(
         err_console.print(f"[red]Vertex AI init error:[/red] {e}")
         sys.exit(1)
 
-    gemini = GeminiProcessor(settings.google)
+    gemini = GeminiProcessor(settings.google, credentials=gcp_credentials)
 
     results: List[AnalysisResult] = []
 
