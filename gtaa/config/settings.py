@@ -63,7 +63,7 @@ class GoogleSettings(BaseSettings):
 
     cloud_project: str = ""
     location: str = "us-central1"
-    model: str = "gemini-1.5-pro"
+    model: str = "gemini-2.0-flash"
 
     @property
     def project_id(self) -> str:

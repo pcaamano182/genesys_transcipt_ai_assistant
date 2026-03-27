@@ -11,7 +11,7 @@ genesys:
 google:
   project_id: ""          # override with GOOGLE_CLOUD_PROJECT env var
   location: "us-central1"
-  model: "gemini-1.5-pro"
+  model: "gemini-2.0-flash"
 
 processing:
   batch_size: 20
