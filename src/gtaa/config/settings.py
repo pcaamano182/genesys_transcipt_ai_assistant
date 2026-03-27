@@ -29,6 +29,8 @@ class GenesysSettings(BaseSettings):
     region: str = "us_west_2"
     client_id: str = ""
     client_secret: str = ""
+    # grant_type: "client_credentials" (default, no browser needed) or "authorization_code"
+    grant_type: str = "client_credentials"
     redirect_uri: str = "http://localhost:8080/callback"
     page_size: int = 100
 
@@ -38,6 +40,13 @@ class GenesysSettings(BaseSettings):
         if v not in GENESYS_REGIONS:
             valid = ", ".join(GENESYS_REGIONS.keys())
             raise ValueError(f"Region '{v}' not valid. Options: {valid}")
+        return v
+
+    @field_validator("grant_type")
+    @classmethod
+    def validate_grant_type(cls, v: str) -> str:
+        if v not in ("client_credentials", "authorization_code"):
+            raise ValueError("grant_type must be 'client_credentials' or 'authorization_code'")
         return v
 
     @property

@@ -2,7 +2,10 @@ genesys:
   region: us_west_2
   client_id: ""
   client_secret: ""
-  redirect_uri: "http://localhost:8080/callback"
+  # client_credentials: no browser needed (default)
+  # authorization_code: interactive browser login
+  grant_type: "client_credentials"
+  redirect_uri: "http://localhost:8080/callback"  # only used with authorization_code
   page_size: 100
 
 google:
