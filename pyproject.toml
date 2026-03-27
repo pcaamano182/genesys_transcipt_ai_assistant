@@ -27,4 +27,5 @@ dependencies = [
 gtaa = "gtaa.cli.main:cli"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+exclude = ["tests*"]
