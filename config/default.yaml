@@ -1,0 +1,27 @@
+genesys:
+  region: us_west_2
+  client_id: ""
+  client_secret: ""
+  redirect_uri: "http://localhost:8080/callback"
+  page_size: 100
+
+google:
+  project_id: ""          # override with GOOGLE_CLOUD_PROJECT env var
+  location: "us-central1"
+  model: "gemini-1.5-pro"
+  # OAuth2 Desktop App client — only needed if gcloud CLI is NOT installed.
+  # Leave empty if gcloud is available (preferred path).
+  oauth_client_id: ""     # override with GCP_OAUTH_CLIENT_ID env var
+  oauth_client_secret: "" # override with GCP_OAUTH_CLIENT_SECRET env var
+
+processing:
+  batch_size: 20
+  max_workers: 5
+  max_retries: 3
+  retry_delay_seconds: 2
+  max_transcript_chars: 100000
+
+output:
+  default_formats:
+    - csv
+  output_dir: "./output"

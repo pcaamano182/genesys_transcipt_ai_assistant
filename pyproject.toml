@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gtaa"
+version = "0.1.0"
+description = "Genesys Transcript AI Analyzer - Download and analyze call transcripts using Vertex AI"
+requires-python = ">=3.11"
+dependencies = [
+    "PureCloudPlatformClientV2>=196.0.0",
+    "google-cloud-aiplatform>=1.60.0",
+    "google-auth>=2.29.0",
+    "google-auth-oauthlib>=1.2.0",
+    "click>=8.1.7",
+    "pydantic-settings>=2.2.1",
+    "pyyaml>=6.0.1",
+    "openpyxl>=3.1.2",
+    "reportlab>=4.1.0",
+    "httpx>=0.27.0",
+    "tenacity>=8.2.3",
+    "rich>=13.7.1",
+    "python-dotenv>=1.0.1",
+]
+
+[project.scripts]
+gtaa = "gtaa.cli.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
