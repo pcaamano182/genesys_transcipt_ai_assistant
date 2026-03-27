@@ -88,6 +88,7 @@ class GeminiProcessor:
     @retry(
         wait=wait_exponential(multiplier=2, min=2, max=60),
         stop=stop_after_attempt(4),
+        reraise=True,
     )
     def _call_gemini(self, prompt: str) -> str:
         from vertexai.generative_models import GenerationConfig  # type: ignore
@@ -137,8 +138,16 @@ class GeminiProcessor:
             analysis = self._call_gemini(prompt)
             error = None
         except Exception as e:
-            analysis = f"Error during analysis: {str(e)}"
-            error = str(e)
+            # Show full error details for debugging
+            err_type = type(e).__name__
+            err_detail = str(e)
+            # For Google API errors, try to extract the HTTP details
+            if hasattr(e, 'message'):
+                err_detail = e.message
+            if hasattr(e, 'code'):
+                err_detail = f"HTTP {e.code}: {err_detail}"
+            analysis = f"Error during analysis ({err_type}): {err_detail}"
+            error = f"{err_type}: {err_detail}"
 
         return AnalysisResult(
             conversation_id=conversation.conversation_id,
