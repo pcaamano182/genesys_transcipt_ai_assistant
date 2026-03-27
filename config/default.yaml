@@ -12,10 +12,10 @@ google:
   project_id: ""          # override with GOOGLE_CLOUD_PROJECT env var
   location: "us-central1"
   model: "gemini-1.5-pro"
-  # OAuth2 Desktop App client — only needed if gcloud CLI is NOT installed.
-  # Leave empty if gcloud is available (preferred path).
-  oauth_client_id: ""     # override with GCP_OAUTH_CLIENT_ID env var
-  oauth_client_secret: "" # override with GCP_OAUTH_CLIENT_SECRET env var
+  # Optional: override the default Google Cloud SDK OAuth client.
+  # Leave empty — the embedded gcloud SDK client is used automatically.
+  oauth_client_id: ""
+  oauth_client_secret: ""
 
 processing:
   batch_size: 20
