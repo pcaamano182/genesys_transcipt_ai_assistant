@@ -17,8 +17,8 @@ env/
 # Credentials cache
 .gtaa/
 
-# Output files
-output/
+# Output files (only the root-level output directory, not gtaa/output/)
+/output/
 
 # IDE
 .vscode/
