@@ -8,16 +8,18 @@ import yaml
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Genesys region → base API URL mapping
-GENESYS_REGIONS: dict[str, str] = {
-    "us_east_1": "api.mypurecloud.com",
-    "us_west_2": "api.usw2.pure.cloud",
-    "eu_west_1": "api.mypurecloud.ie",
-    "eu_west_2": "api.euw2.pure.cloud",
-    "ap_southeast_2": "api.mypurecloud.com.au",
-    "ap_northeast_1": "api.mypurecloud.jp",
-    "ca_central_1": "api.cac1.pure.cloud",
-    "sa_east_1": "api.sae1.pure.cloud",
+# Genesys region → (api host, login host)
+# - api host   : used for all REST API calls (conversations, transcripts, etc.)
+# - login host : used for OAuth2 authorize + token endpoints
+GENESYS_REGIONS: dict[str, tuple[str, str]] = {
+    "us_east_1":       ("api.mypurecloud.com",    "login.mypurecloud.com"),
+    "us_west_2":       ("api.usw2.pure.cloud",    "login.usw2.pure.cloud"),
+    "eu_west_1":       ("api.mypurecloud.ie",     "login.mypurecloud.ie"),
+    "eu_west_2":       ("api.euw2.pure.cloud",    "login.euw2.pure.cloud"),
+    "ap_southeast_2":  ("api.mypurecloud.com.au", "login.mypurecloud.com.au"),
+    "ap_northeast_1":  ("api.mypurecloud.jp",     "login.mypurecloud.jp"),
+    "ca_central_1":    ("api.cac1.pure.cloud",    "login.cac1.pure.cloud"),
+    "sa_east_1":       ("api.sae1.pure.cloud",    "login.sae1.pure.cloud"),
 }
 
 
@@ -40,7 +42,11 @@ class GenesysSettings(BaseSettings):
 
     @property
     def api_base_url(self) -> str:
-        return f"https://{GENESYS_REGIONS[self.region]}"
+        return f"https://{GENESYS_REGIONS[self.region][0]}"
+
+    @property
+    def login_base_url(self) -> str:
+        return f"https://{GENESYS_REGIONS[self.region][1]}"
 
 
 class GoogleSettings(BaseSettings):

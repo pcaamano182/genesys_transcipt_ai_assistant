@@ -75,7 +75,7 @@ def _exchange_code(
     state: str,
 ) -> dict:
     redirect_uri = settings.redirect_uri
-    token_url = f"{settings.api_base_url}/oauth/token"
+    token_url = f"{settings.login_base_url}/oauth/token"
     response = httpx.post(
         token_url,
         data={
@@ -94,7 +94,7 @@ def _exchange_code(
 
 
 def _refresh_token(refresh_tok: str, settings: GenesysSettings) -> dict:
-    token_url = f"{settings.api_base_url}/oauth/token"
+    token_url = f"{settings.login_base_url}/oauth/token"
     response = httpx.post(
         token_url,
         data={
@@ -157,7 +157,7 @@ def login(settings: GenesysSettings) -> str:
             "state": state,
         }
     )
-    auth_url = f"{settings.api_base_url}/oauth/authorize?{params}"
+    auth_url = f"{settings.login_base_url}/oauth/authorize?{params}"
 
     server = _start_callback_server(port)
     print(f"Opening browser for Genesys authentication...")
