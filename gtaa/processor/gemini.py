@@ -68,31 +68,47 @@ def _build_prompt(user_prompt: str, transcript_text: str, conversation: Conversa
 
 def _discover_model_rest(configured_model: str, project_id: str, location: str, credentials) -> str:
     """
-    Check model availability via REST API (fast, no retries, no content generation).
-    Returns the first available model name.
+    Test model availability by sending a minimal generateContent request via REST.
+    No SDK retries, no loops — one POST per candidate, 15s timeout.
+    Returns the first model that responds successfully.
     """
     import httpx
     from google.auth.transport.requests import Request  # type: ignore
 
-    # Get a fresh access token
     if not credentials.token or credentials.expired:
         credentials.refresh(Request())
 
-    headers = {"Authorization": f"Bearer {credentials.token}"}
+    headers = {
+        "Authorization": f"Bearer {credentials.token}",
+        "Content-Type": "application/json",
+    }
+    # Minimal request body — just ask the model to say "ok"
+    body = {
+        "contents": [{"role": "user", "parts": [{"text": "Say OK"}]}],
+        "generationConfig": {"temperature": 0, "maxOutputTokens": 5},
+    }
+
     candidates = [configured_model] + [m for m in _FALLBACK_MODELS if m != configured_model]
 
     for model_name in candidates:
         url = (
             f"https://{location}-aiplatform.googleapis.com/v1/"
-            f"publishers/google/models/{model_name}"
+            f"projects/{project_id}/locations/{location}/"
+            f"publishers/google/models/{model_name}:generateContent"
         )
         try:
-            r = httpx.get(url, headers=headers, timeout=10)
+            r = httpx.post(url, headers=headers, json=body, timeout=15)
             if r.status_code == 200:
                 return model_name
-            print(f"    {model_name}: HTTP {r.status_code} (skipping)")
+            # Show why it failed
+            error_msg = ""
+            try:
+                error_msg = r.json().get("error", {}).get("message", r.text[:100])
+            except Exception:
+                error_msg = r.text[:100]
+            print(f"    {model_name}: HTTP {r.status_code} - {error_msg}")
         except Exception as e:
-            print(f"    {model_name}: {type(e).__name__} (skipping)")
+            print(f"    {model_name}: {type(e).__name__}: {e}")
 
     raise RuntimeError(
         f"No Gemini model available in project '{project_id}' / location '{location}'.\n"
