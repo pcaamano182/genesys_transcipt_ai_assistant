@@ -27,13 +27,8 @@ import os
 import platform
 import shutil
 import subprocess
-import threading
-import time
-import webbrowser
 from pathlib import Path
 from typing import Optional
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, urlparse
 
 GCP_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 CACHE_PATH = Path.home() / ".gtaa" / "gcp_credentials.json"
@@ -84,85 +79,39 @@ def _login_via_gcloud(project_id: str) -> dict:
 # Path 2: browser OAuth2 flow without gcloud
 # ---------------------------------------------------------------------------
 
-class _CallbackHandler(BaseHTTPRequestHandler):
-    auth_code: Optional[str] = None
-    error: Optional[str] = None
-
-    def do_GET(self):
-        params = parse_qs(urlparse(self.path).query)
-        if "code" in params:
-            _CallbackHandler.auth_code = params["code"][0]
-            self._respond(200, "Google authentication successful! You can close this tab.")
-        elif "error" in params:
-            _CallbackHandler.error = params.get("error_description", params["error"])[0]
-            self._respond(400, f"Authentication error: {_CallbackHandler.error}")
-        else:
-            self._respond(404, "Not found")
-
-    def _respond(self, code: int, message: str):
-        body = f"<html><body><h2>{message}</h2></body></html>".encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "text/html")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, *args):
-        pass
-
-
 def _login_via_browser(project_id: str, client_id: str, client_secret: str) -> dict:
     """
-    Run OAuth2 Authorization Code flow in the browser using the provided
-    (or default gcloud SDK) client credentials.
-    Returns a cache dict ready to save.
+    Run the OAuth2 installed-app flow using InstalledAppFlow.run_local_server().
+    This is exactly how gcloud handles the browser login internally — it starts
+    a local server on a random available port, opens the browser, and captures
+    the callback. No manual redirect URI path needed.
     """
-    from google_auth_oauthlib.flow import Flow  # type: ignore
+    from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore
 
-    redirect_uri = f"http://localhost:{_CALLBACK_PORT}/callback"
-
-    _CallbackHandler.auth_code = None
-    _CallbackHandler.error = None
-
-    server = HTTPServer(("localhost", _CALLBACK_PORT), _CallbackHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-
-    flow = Flow.from_client_config(
+    flow = InstalledAppFlow.from_client_config(
         client_config={
             "installed": {
                 "client_id": client_id,
                 "client_secret": client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [redirect_uri],
+                "redirect_uris": ["http://localhost"],
             }
         },
         scopes=GCP_SCOPES,
-        redirect_uri=redirect_uri,
     )
-    auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent")
 
     print("Opening browser for Google Cloud authentication...")
-    print(f"If the browser does not open automatically, visit:\n  {auth_url}\n")
-    webbrowser.open(auth_url)
+    # run_local_server picks a free port automatically, opens the browser,
+    # and handles the redirect — same behaviour as `gcloud auth application-default login`
+    creds = flow.run_local_server(
+        port=0,           # pick any free port
+        open_browser=True,
+        prompt="consent",
+        access_type="offline",
+        success_message="Authentication successful! You can close this tab.",
+    )
 
-    deadline = time.time() + _AUTH_TIMEOUT
-    while time.time() < deadline:
-        if _CallbackHandler.auth_code or _CallbackHandler.error:
-            break
-        time.sleep(0.5)
-    server.shutdown()
-
-    if _CallbackHandler.error:
-        raise GCPAuthError(f"GCP auth failed: {_CallbackHandler.error}")
-    if not _CallbackHandler.auth_code:
-        raise GCPAuthError("Timed out waiting for Google authentication.")
-
-    flow.fetch_token(code=_CallbackHandler.auth_code)
-    creds = flow.credentials
-
-    # Resolve the authenticated user's email
     email = _resolve_email(creds.token)
 
     return {
