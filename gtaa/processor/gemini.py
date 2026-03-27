@@ -19,7 +19,16 @@ Be concise, structured, and focus on actionable insights.
 If the transcript is empty or unintelligible, respond with: "No transcript available."
 """
 
-_MAX_CHARS_PER_CHUNK = 80_000  # ~20k tokens, safe for Gemini 1.5 Pro
+_MAX_CHARS_PER_CHUNK = 80_000  # ~20k tokens, safe for Gemini
+
+# Models to try in order of preference if the configured model fails with 404
+_FALLBACK_MODELS = [
+    "gemini-2.5-flash-preview-05-20",
+    "gemini-2.0-flash-001",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-002",
+    "gemini-1.5-pro-002",
+]
 
 
 @dataclass
@@ -71,16 +80,58 @@ def _chunk_transcript(text: str, max_chars: int = _MAX_CHARS_PER_CHUNK) -> list[
     return chunks
 
 
+def _discover_model(configured_model: str) -> str:
+    """
+    Try the configured model first. If it returns 404, try fallback models.
+    Returns the first model name that responds successfully.
+    """
+    from vertexai.generative_models import GenerativeModel, GenerationConfig  # type: ignore
+    from google.api_core.exceptions import NotFound  # type: ignore
+
+    candidates = [configured_model] + [m for m in _FALLBACK_MODELS if m != configured_model]
+
+    for model_name in candidates:
+        try:
+            model = GenerativeModel(model_name=model_name)
+            model.generate_content(
+                "Say OK",
+                generation_config=GenerationConfig(temperature=0, max_output_tokens=5),
+            )
+            return model_name
+        except NotFound:
+            continue
+        except Exception:
+            # Any other error (auth, quota, etc.) means the model exists but something else failed
+            # Return it anyway — the real error will surface during analysis
+            return model_name
+
+    raise RuntimeError(
+        f"No Gemini model available. Tried: {', '.join(candidates)}.\n"
+        "Verify that Vertex AI API is enabled in your GCP project and the "
+        "service account has the Vertex AI User role."
+    )
+
+
 class GeminiProcessor:
     def __init__(self, settings: GoogleSettings):
         self.settings = settings
         self._model = None
+        self._resolved_model_name: Optional[str] = None
 
     def _get_model(self):
         if self._model is None:
-            from vertexai.generative_models import GenerativeModel, GenerationConfig  # type: ignore
+            from vertexai.generative_models import GenerativeModel  # type: ignore
+
+            if self._resolved_model_name is None:
+                print(f"  Checking model availability ({self.settings.model})...")
+                self._resolved_model_name = _discover_model(self.settings.model)
+                if self._resolved_model_name != self.settings.model:
+                    print(f"  Model '{self.settings.model}' not found, using: {self._resolved_model_name}")
+                else:
+                    print(f"  Model OK: {self._resolved_model_name}")
+
             self._model = GenerativeModel(
-                model_name=self.settings.model,
+                model_name=self._resolved_model_name,
                 system_instruction=_DEFAULT_SYSTEM_PROMPT,
             )
         return self._model
@@ -138,10 +189,8 @@ class GeminiProcessor:
             analysis = self._call_gemini(prompt)
             error = None
         except Exception as e:
-            # Show full error details for debugging
             err_type = type(e).__name__
             err_detail = str(e)
-            # For Google API errors, try to extract the HTTP details
             if hasattr(e, 'message'):
                 err_detail = e.message
             if hasattr(e, 'code'):
